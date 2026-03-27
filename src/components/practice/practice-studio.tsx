@@ -32,6 +32,15 @@ type RecentSession = {
   createdAt: string;
 };
 
+async function safeJson<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(text || "Server returned invalid JSON");
+  }
+}
+
 export function PracticeStudio({
   mode,
   promptText,
@@ -53,6 +62,7 @@ export function PracticeStudio({
   const [result, setResult] = useState<GradeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
   const renderedTranscript = useMemo(() => {
@@ -76,53 +86,101 @@ export function PracticeStudio({
         );
       }
 
-      return <span key={`${item.original_word}-${index}`} className="mr-2 inline-block">{item.original_word}</span>;
+      return (
+        <span key={`${item.original_word}-${index}`} className="mr-2 inline-block">
+          {item.original_word}
+        </span>
+      );
     });
   }, [result]);
 
   async function startRecording() {
-    setError(null);
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-    chunksRef.current = [];
-    recorder.ondataavailable = (event) => chunksRef.current.push(event.data);
-    recorder.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-      const formData = new FormData();
-      formData.append("audio", blob, "answer.webm");
-      formData.append("mode", mode);
-      formData.append("promptText", promptText);
+    if (busy || recording) return;
 
-      try {
-        setBusy(true);
-        const transcribeRes = await fetch("/api/transcribe", { method: "POST", body: formData });
-        const transcribeData = await transcribeRes.json();
-        if (!transcribeRes.ok) throw new Error(transcribeData.error || "Không transcript được audio");
-        setTranscript(transcribeData.transcript || "");
+    const safePromptText = promptText.trim();
+    if (!safePromptText) {
+      setError("Thiếu promptText nên chưa thể gửi bài đi chấm.");
+      return;
+    }
 
-        const gradeRes = await fetch("/api/grade", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode, promptText, transcript: transcribeData.transcript, audioUrl: null }),
-        });
-        const gradeData = await gradeRes.json();
-        if (!gradeRes.ok) throw new Error(gradeData.error || "Không chấm điểm được");
-        setResult(gradeData);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Có lỗi xảy ra");
-      } finally {
-        stream.getTracks().forEach((track) => track.stop());
-        setBusy(false);
-      }
-    };
+    try {
+      setError(null);
+      setResult(null);
+      setTranscript("");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        const stopStream = () => {
+          streamRef.current?.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        };
 
-    recorderRef.current = recorder;
-    recorder.start();
-    setRecording(true);
+        try {
+          setBusy(true);
+          const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+
+          if (!blob || blob.size <= 0) {
+            throw new Error("Audio rỗng, anh ghi âm lại giúp em.");
+          }
+
+          const formData = new FormData();
+          formData.append("audio", blob, "answer.webm");
+          formData.append("mode", mode);
+          formData.append("promptText", safePromptText);
+
+          const transcribeRes = await fetch("/api/transcribe", { method: "POST", body: formData });
+          const transcribeData = await safeJson<{ transcript?: string; error?: string }>(transcribeRes);
+          if (!transcribeRes.ok) throw new Error(transcribeData.error || "Không transcript được audio");
+
+          const safeTranscript = String(transcribeData.transcript || "").trim();
+          if (!safeTranscript) {
+            throw new Error("Transcript đang rỗng, em chưa gửi xuống backend để chấm.");
+          }
+
+          setTranscript(safeTranscript);
+
+          const gradePayload = {
+            mode,
+            promptText: safePromptText,
+            transcript: safeTranscript,
+            audioUrl: null,
+          };
+
+          const gradeRes = await fetch("/api/grade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(gradePayload),
+          });
+          const gradeData = await safeJson<GradeResponse & { error?: string }>(gradeRes);
+          if (!gradeRes.ok) throw new Error(gradeData.error || "Không chấm điểm được");
+          setResult(gradeData);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Có lỗi xảy ra");
+        } finally {
+          stopStream();
+          setBusy(false);
+        }
+      };
+
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch (err) {
+      setRecording(false);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setError(err instanceof Error ? err.message : "Không truy cập được microphone");
+    }
   }
 
   function stopRecording() {
-    recorderRef.current?.stop();
+    if (!recorderRef.current || recorderRef.current.state === "inactive") return;
+    recorderRef.current.stop();
     setRecording(false);
   }
 
@@ -182,7 +240,9 @@ export function PracticeStudio({
           <Card className="p-6">
             <div className="flex flex-wrap gap-3">
               {scoreBadges.map(([label, score]) => (
-                <div key={label} className="rounded-full bg-rose-50 px-4 py-2 text-sm font-medium text-rose-600">{label}: {score}</div>
+                <div key={label} className="rounded-full bg-rose-50 px-4 py-2 text-sm font-medium text-rose-600">
+                  {label}: {score}
+                </div>
               ))}
             </div>
             <div className="mt-6 grid gap-4 lg:grid-cols-2">

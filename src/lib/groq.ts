@@ -19,7 +19,8 @@ const gradeSchema = z.object({
 });
 
 const SYSTEM_PROMPT = `You are an IELTS Speaking examiner.
-Return ONLY strict JSON with this exact shape:
+Return ONLY pure JSON. Do not wrap in markdown. Do not use code fences. Do not add explanations before or after the JSON.
+Return this exact shape:
 {
   "overall": 0,
   "fluency": 0,
@@ -44,7 +45,35 @@ Rules:
 
 export type GradeResult = z.infer<typeof gradeSchema>;
 
-export async function gradeSpeaking(input: { mode: string; promptText: string; transcript: string }) {
+function extractJsonObject(content: string) {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+
+  return trimmed;
+}
+
+function safeParseGrade(content: string) {
+  const candidate = extractJsonObject(content);
+  try {
+    return gradeSchema.parse(JSON.parse(candidate));
+  } catch (error) {
+    console.error("[groq.safeParseGrade] Failed to parse/validate model JSON", {
+      rawContent: content,
+      candidate,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw new Error("LLM returned invalid JSON payload");
+  }
+}
+
+async function requestGroq(input: { mode: string; promptText: string; transcript: string }) {
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -66,6 +95,12 @@ export async function gradeSpeaking(input: { mode: string; promptText: string; t
   });
 
   if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    console.error("[groq.requestGroq] Groq request failed", {
+      status: response.status,
+      body: errorText,
+      input,
+    });
     throw new Error(`Groq request failed: ${response.status}`);
   }
 
@@ -73,8 +108,29 @@ export async function gradeSpeaking(input: { mode: string; promptText: string; t
   const content = data.choices?.[0]?.message?.content;
 
   if (!content) {
+    console.error("[groq.requestGroq] Groq returned empty content", { data, input });
     throw new Error("Groq returned empty content");
   }
 
-  return gradeSchema.parse(JSON.parse(content));
+  return content as string;
+}
+
+export async function gradeSpeaking(input: { mode: string; promptText: string; transcript: string }) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const content = await requestGroq(input);
+      return safeParseGrade(content);
+    } catch (error) {
+      lastError = error;
+      console.error("[groq.gradeSpeaking] Attempt failed", {
+        attempt,
+        input,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Không parse được dữ liệu chấm điểm từ LLM");
 }

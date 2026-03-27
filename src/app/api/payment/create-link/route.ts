@@ -18,7 +18,10 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const packageId = String(body.packageId || "pro-100k");
     const selected = PACKAGES[packageId];
-    if (!selected) return NextResponse.json({ error: "Package không hợp lệ" }, { status: 400 });
+    if (!selected) {
+      console.error("[api/payment/create-link] Invalid packageId", { packageId, body, userId: session.user.id });
+      return NextResponse.json({ error: "Package không hợp lệ" }, { status: 400 });
+    }
 
     const orderCode = `${Date.now()}${randomInt(100, 999)}`;
     await prisma.transaction.create({
@@ -50,7 +53,12 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ checkoutUrl: paymentLink.checkoutUrl, qrCode: paymentLink.qrCode });
-  } catch {
+  } catch (error) {
+    console.error("[api/payment/create-link] Failed to create payment link", {
+      userId: session.user.id,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json({ error: "Không tạo được link thanh toán" }, { status: 500 });
   }
 }
