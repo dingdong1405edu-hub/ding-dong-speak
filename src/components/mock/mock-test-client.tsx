@@ -52,15 +52,32 @@ export function MockTestClient({ topics }: { topics: Topic[] }) {
   const currentQuestion = useMemo(() => questions[index] || "", [questions, index]);
   const filtered = useMemo(() => topics.filter((topic) => topic.part === part), [topics, part]);
 
-  function startExam() {
-    const pool = filtered.flatMap((topic) => topic.questions);
-    const picked = pool.slice(0, Math.max(2, Math.min(9, count)));
-    setQuestions(picked);
-    setAnswers([]);
-    setResult(null);
-    setIndex(0);
-    setStarted(true);
-    setError(null);
+  async function startExam() {
+    try {
+      setBusy(true);
+      const requestedCount = Math.max(2, Math.min(9, count));
+      const res = await fetch("/api/questions/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          part,
+          topic: `Create a realistic IELTS ${part.replaceAll("_", " ")} mock test with ${requestedCount} strict examiner questions`,
+          count: requestedCount,
+        }),
+      });
+      const data = await safeJson<{ questions?: string[]; error?: string }>(res);
+      if (!res.ok || !data.questions?.length) throw new Error(data.error || "Không tạo được đề AI");
+      setQuestions(data.questions.slice(0, requestedCount));
+      setAnswers([]);
+      setResult(null);
+      setIndex(0);
+      setStarted(true);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không tạo được đề AI");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function playQuestion() {
@@ -147,13 +164,16 @@ export function MockTestClient({ topics }: { topics: Topic[] }) {
             {VOICES.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         </div>
-        <Button className="mt-4" onClick={startExam}>Bắt đầu thi thử</Button>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Button variant="outline" onClick={() => void fetch("/api/examiner/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Hello, this is your IELTS examiner voice preview.", voice }) }).then(async (res) => { if (!res.ok) return; const blob = await res.blob(); const url = URL.createObjectURL(blob); if (audioRef.current) { audioRef.current.src = url; await audioRef.current.play(); } })}>Nghe thử giọng này</Button>
+          <Button onClick={() => void startExam()} disabled={busy}>{busy ? "Đang tạo đề AI..." : "Bắt đầu thi thử"}</Button>
+        </div>
       </Card>
 
       <Card className="p-6">
         {!started ? (
           <div>
-            <p className="text-sm text-zinc-500">Question bank theo part đã chọn</p>
+            <p className="text-sm text-zinc-500">AI sẽ tạo đề thi riêng theo part anh chọn, kiểu câu gần format IELTS thật. Danh sách dưới đây chỉ là mẫu tham chiếu nền.</p>
             <div className="mt-4 space-y-4">
               {filtered.map((topic) => <div key={topic.name}><p className="font-semibold">{topic.name}</p><ul className="mt-2 space-y-2 text-sm text-zinc-600">{topic.questions.slice(0, 3).map((q) => <li key={q}>• {q}</li>)}</ul></div>)}
             </div>
@@ -179,8 +199,9 @@ export function MockTestClient({ topics }: { topics: Topic[] }) {
             <h2 className="mt-2 text-2xl font-semibold">{currentQuestion}</h2>
             <div className="mt-4 flex gap-3">
               <Button variant="outline" onClick={() => void playQuestion()}><Play className="mr-2 size-4" />Nghe giám khảo</Button>
-              <Button onMouseDown={() => void startRecording()} onMouseUp={stopRecording} onMouseLeave={stopRecording} disabled={busy}>
-                {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Mic className="mr-2 size-4" />}Trả lời liên tục
+              <Button onClick={() => (recorderRef.current && recorderRef.current.state !== "inactive") ? stopRecording() : void startRecording()} disabled={busy}>
+                {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Mic className="mr-2 size-4" />}
+                {recorderRef.current && recorderRef.current.state !== "inactive" ? "Dừng và nộp câu này" : "Bắt đầu trả lời"}
               </Button>
             </div>
             {error ? <p className="mt-4 text-sm text-red-500">{error}</p> : null}

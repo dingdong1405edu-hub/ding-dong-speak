@@ -10,8 +10,9 @@ export async function POST(request: Request) {
     const body = await request.json();
     const topic = String(body.topic || "").trim();
     const part = String(body.part || "PART_1").trim();
+    const count = Number(body.count || 5);
     if (!topic) return NextResponse.json({ error: "topic is required" }, { status: 400 });
-    const generated = await generateTopicQuestions({ part, topic });
+    const generated = await generateTopicQuestions({ part, topic, count });
     return NextResponse.json(generated);
   } catch (error) {
     console.error("[api/questions/generate] Failed", {

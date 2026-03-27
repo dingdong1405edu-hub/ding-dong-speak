@@ -75,6 +75,78 @@ const QUESTION_BANK = [
       "What makes some public campaigns more effective than others?",
     ],
   },
+  {
+    part: "PART_1",
+    name: "Food & Cooking",
+    slug: "food-cooking",
+    desc: "Chủ đề quen thuộc, dễ nói ở part 1",
+    questions: [
+      "Do you enjoy cooking at home?",
+      "What kind of food do you usually eat?",
+      "Do you like trying food from other countries?",
+      "Is cooking an important skill for young people?",
+    ],
+  },
+  {
+    part: "PART_1",
+    name: "Daily Routine",
+    slug: "daily-routine",
+    desc: "Dễ mở rộng ý, phù hợp người mới bắt đầu",
+    questions: [
+      "What is the busiest part of your day?",
+      "Do you prefer a fixed routine or a flexible one?",
+      "Has your routine changed in the last few years?",
+      "What helps you stay productive every day?",
+    ],
+  },
+  {
+    part: "PART_2",
+    name: "Places & Travel",
+    slug: "places-travel",
+    desc: "Cue card về chuyến đi và địa điểm đáng nhớ",
+    questions: [
+      "Describe a place you would like to visit again.",
+      "Describe a trip that taught you something important.",
+      "Describe a place where you felt relaxed.",
+      "Describe a crowded place you visited recently.",
+    ],
+  },
+  {
+    part: "PART_2",
+    name: "Media & Entertainment",
+    slug: "media-entertainment",
+    desc: "Cue card về phim, sách, nội dung số",
+    questions: [
+      "Describe a film that made a strong impression on you.",
+      "Describe a book or article you found useful.",
+      "Describe a TV programme that many people like.",
+      "Describe a piece of music you often listen to.",
+    ],
+  },
+  {
+    part: "PART_3",
+    name: "Work & Career",
+    slug: "work-career",
+    desc: "Discussion về nghề nghiệp và kỹ năng tương lai",
+    questions: [
+      "Why do some people change jobs frequently nowadays?",
+      "How important is job satisfaction compared with salary?",
+      "What skills will be most valuable in the future workplace?",
+      "Should universities focus more on employability?",
+    ],
+  },
+  {
+    part: "PART_3",
+    name: "Cities & Transport",
+    slug: "cities-transport",
+    desc: "Discussion về giao thông và đô thị",
+    questions: [
+      "Why do many cities struggle with traffic congestion?",
+      "How can public transport be made more attractive to commuters?",
+      "Do you think private cars should be limited in city centres?",
+      "What makes some cities easier to live in than others?",
+    ],
+  },
 ];
 
 for (const topic of QUESTION_BANK) {

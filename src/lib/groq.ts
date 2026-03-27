@@ -130,13 +130,13 @@ export async function gradeMockExam(input: { part: string; questions: string[]; 
   return gradeSpeaking({ mode: input.part, promptText: `Mock exam questions:\n${promptText}`, transcript });
 }
 
-export async function generateTopicQuestions(input: { part: string; topic: string }) {
+export async function generateTopicQuestions(input: { part: string; topic: string; count?: number }) {
   const content = await requestGroq([
     {
       role: "system",
-      content: `You are an IELTS speaking material writer. Return ONLY pure JSON with shape {"topic":"...","questions":["..."]}. Generate 5 strict IELTS-style questions suitable for the requested part. No markdown.` ,
+      content: `You are an IELTS speaking material writer. Return ONLY pure JSON with shape {"topic":"...","questions":["..."]}. Generate ${input.count ?? 5} strict IELTS-style questions suitable for the requested part. No markdown.` ,
     },
-    { role: "user", content: `Part: ${input.part}\nRequested topic: ${input.topic}` },
+    { role: "user", content: `Part: ${input.part}\nRequested topic: ${input.topic}\nNumber of questions: ${input.count ?? 5}` },
   ]);
   return parseWithSchema(content, questionSchema, "generateTopicQuestions");
 }

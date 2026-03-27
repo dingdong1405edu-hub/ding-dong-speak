@@ -250,8 +250,9 @@ export function PracticeStudio({
                   notes={activeFeedback?.notes}
                   topicVocab={activeFeedback?.topic_vocab}
                 />
-                <Button className="rounded-full bg-violet-600 px-6" onMouseDown={() => void startRecording()} onMouseUp={stopRecording} onMouseLeave={() => recording && stopRecording()} onTouchStart={() => void startRecording()} onTouchEnd={stopRecording} disabled={busy}>
-                  {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Mic className="mr-2 size-4" />}Ghi âm ngay
+                <Button className="rounded-full bg-violet-600 px-6" onClick={() => (recording ? stopRecording() : void startRecording())} disabled={busy}>
+                  {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Mic className="mr-2 size-4" />}
+                  {recording ? "Dừng ghi âm" : "Ghi âm ngay"}
                 </Button>
               </div>
             </div>
