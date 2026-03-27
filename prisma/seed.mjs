@@ -28,6 +28,42 @@ const QUESTION_BANK = [
     ],
   },
   {
+    part: "PART_1",
+    name: "Food & Cooking",
+    slug: "food-cooking",
+    desc: "Câu ngắn, quen thuộc, dễ lấy band ổn định",
+    questions: [
+      "Do you enjoy cooking at home?",
+      "What kind of food do you usually eat?",
+      "Is there any food you disliked as a child?",
+      "Do you prefer eating alone or with other people?",
+    ],
+  },
+  {
+    part: "PART_1",
+    name: "Daily Routine",
+    slug: "daily-routine",
+    desc: "Chủ đề dễ nói cho người mới bắt đầu",
+    questions: [
+      "What is the busiest part of your day?",
+      "Do you prefer to plan your day carefully?",
+      "What helps you stay productive every day?",
+      "Has your routine changed recently?",
+    ],
+  },
+  {
+    part: "PART_1",
+    name: "Shopping & Fashion",
+    slug: "shopping-fashion",
+    desc: "Chủ đề đời thường rất hay gặp trong speaking",
+    questions: [
+      "Do you enjoy shopping for clothes?",
+      "How often do you buy things online?",
+      "Do you prefer practical clothes or fashionable clothes?",
+      "Has online shopping changed your habits?",
+    ],
+  },
+  {
     part: "PART_2",
     name: "People & Memories",
     slug: "people-memories",
@@ -49,6 +85,42 @@ const QUESTION_BANK = [
       "Describe a goal you achieved that made you proud.",
       "Describe a difficult decision you made successfully.",
       "Describe a course you would like to take one day.",
+    ],
+  },
+  {
+    part: "PART_2",
+    name: "Places & Travel",
+    slug: "places-travel",
+    desc: "Cue card về địa điểm, chuyến đi và trải nghiệm",
+    questions: [
+      "Describe a place you would like to visit again.",
+      "Describe a trip that taught you something important.",
+      "Describe a crowded place you visited recently.",
+      "Describe a place where you felt relaxed.",
+    ],
+  },
+  {
+    part: "PART_2",
+    name: "Media & Entertainment",
+    slug: "media-entertainment",
+    desc: "Cue card về phim, sách, âm nhạc, nội dung số",
+    questions: [
+      "Describe a film that made a strong impression on you.",
+      "Describe a book or article you found useful.",
+      "Describe a piece of music you often listen to.",
+      "Describe a TV programme that many people like.",
+    ],
+  },
+  {
+    part: "PART_2",
+    name: "Objects & Possessions",
+    slug: "objects-possessions",
+    desc: "Cue card về đồ vật, công cụ, vật kỷ niệm",
+    questions: [
+      "Describe something you own that is very important to you.",
+      "Describe a useful object you use every day.",
+      "Describe something you bought and were happy with.",
+      "Describe an item you would like to replace in the future.",
     ],
   },
   {
@@ -76,58 +148,10 @@ const QUESTION_BANK = [
     ],
   },
   {
-    part: "PART_1",
-    name: "Food & Cooking",
-    slug: "food-cooking",
-    desc: "Chủ đề quen thuộc, dễ nói ở part 1",
-    questions: [
-      "Do you enjoy cooking at home?",
-      "What kind of food do you usually eat?",
-      "Do you like trying food from other countries?",
-      "Is cooking an important skill for young people?",
-    ],
-  },
-  {
-    part: "PART_1",
-    name: "Daily Routine",
-    slug: "daily-routine",
-    desc: "Dễ mở rộng ý, phù hợp người mới bắt đầu",
-    questions: [
-      "What is the busiest part of your day?",
-      "Do you prefer a fixed routine or a flexible one?",
-      "Has your routine changed in the last few years?",
-      "What helps you stay productive every day?",
-    ],
-  },
-  {
-    part: "PART_2",
-    name: "Places & Travel",
-    slug: "places-travel",
-    desc: "Cue card về chuyến đi và địa điểm đáng nhớ",
-    questions: [
-      "Describe a place you would like to visit again.",
-      "Describe a trip that taught you something important.",
-      "Describe a place where you felt relaxed.",
-      "Describe a crowded place you visited recently.",
-    ],
-  },
-  {
-    part: "PART_2",
-    name: "Media & Entertainment",
-    slug: "media-entertainment",
-    desc: "Cue card về phim, sách, nội dung số",
-    questions: [
-      "Describe a film that made a strong impression on you.",
-      "Describe a book or article you found useful.",
-      "Describe a TV programme that many people like.",
-      "Describe a piece of music you often listen to.",
-    ],
-  },
-  {
     part: "PART_3",
     name: "Work & Career",
     slug: "work-career",
-    desc: "Discussion về nghề nghiệp và kỹ năng tương lai",
+    desc: "Discussion về nghề nghiệp, động lực và thị trường lao động",
     questions: [
       "Why do some people change jobs frequently nowadays?",
       "How important is job satisfaction compared with salary?",
@@ -139,12 +163,24 @@ const QUESTION_BANK = [
     part: "PART_3",
     name: "Cities & Transport",
     slug: "cities-transport",
-    desc: "Discussion về giao thông và đô thị",
+    desc: "Discussion về đô thị, giao thông, quy hoạch",
     questions: [
       "Why do many cities struggle with traffic congestion?",
       "How can public transport be made more attractive to commuters?",
       "Do you think private cars should be limited in city centres?",
       "What makes some cities easier to live in than others?",
+    ],
+  },
+  {
+    part: "PART_3",
+    name: "Media & Behaviour",
+    slug: "media-behaviour",
+    desc: "Discussion về mạng xã hội, nội dung số và hành vi công chúng",
+    questions: [
+      "How does social media influence young people's behaviour?",
+      "Should online content be regulated more strictly?",
+      "Why do some people trust influencers more than experts?",
+      "How has digital media changed the way people form opinions?",
     ],
   },
 ];
@@ -168,10 +204,7 @@ for (const topic of QUESTION_BANK) {
   });
 
   for (const [index, promptText] of topic.questions.entries()) {
-    const existing = await prisma.questionItem.findFirst({
-      where: { topicId: savedTopic.id, promptText },
-    });
-
+    const existing = await prisma.questionItem.findFirst({ where: { topicId: savedTopic.id, promptText } });
     if (!existing) {
       await prisma.questionItem.create({
         data: {
