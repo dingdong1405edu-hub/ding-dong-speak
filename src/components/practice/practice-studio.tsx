@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Loader2, Mic, Plus, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Mic, Plus, Sparkles, Square } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ExportPdfButton } from "@/components/practice/export-pdf-button";
@@ -33,6 +33,12 @@ type RecentSession = {
   createdAt: string;
 };
 
+type RecorderState = {
+  mediaRecorder: MediaRecorder;
+  stream: MediaStream;
+  mimeType: string;
+};
+
 async function safeJson<T>(response: Response): Promise<T> {
   const text = await response.text();
   try {
@@ -40,6 +46,17 @@ async function safeJson<T>(response: Response): Promise<T> {
   } catch {
     throw new Error(text || "Server returned invalid JSON");
   }
+}
+
+function getSupportedRecorderMimeType() {
+  if (typeof window === "undefined" || typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  return candidates.find((item) => MediaRecorder.isTypeSupported(item)) || "";
 }
 
 export function PracticeStudio({
@@ -65,8 +82,7 @@ export function PracticeStudio({
   const [result, setResult] = useState<GradeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedSet, setSavedSet] = useState(new Set(savedWords));
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<RecorderState | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
   const renderedTranscript = useMemo(() => {
@@ -90,7 +106,11 @@ export function PracticeStudio({
         );
       }
 
-      return <span key={`${item.original_word}-${index}`} className="mr-2 inline-block">{item.original_word}</span>;
+      return (
+        <span key={`${item.original_word}-${index}`} className="mr-2 inline-block">
+          {item.original_word}
+        </span>
+      );
     });
   }, [result, transcript]);
 
@@ -106,47 +126,79 @@ export function PracticeStudio({
       if (!response.ok) throw new Error(data.error || "Không lưu được từ vựng");
       setSavedSet((prev) => new Set(prev).add(phrase));
     } catch (err) {
+      console.error("[PracticeStudio.saveWord] Failed", { phrase, mode, promptText, error: err instanceof Error ? err.message : String(err) });
       setError(err instanceof Error ? err.message : "Không lưu được từ vựng");
     }
   }
 
   async function startRecording() {
     if (busy || recording) return;
+
     const safePromptText = promptText.trim();
-    if (!safePromptText) return setError("Thiếu promptText nên chưa thể gửi bài đi chấm.");
+    if (!safePromptText) {
+      setError("Thiếu promptText nên chưa thể gửi bài đi chấm.");
+      return;
+    }
+
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      console.error("[PracticeStudio.startRecording] mediaDevices unavailable", { userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "unknown" });
+      setError("Thiết bị này không hỗ trợ ghi âm trong trình duyệt.");
+      return;
+    }
+
+    if (typeof MediaRecorder === "undefined") {
+      console.error("[PracticeStudio.startRecording] MediaRecorder unavailable", { userAgent: navigator.userAgent });
+      setError("Trình duyệt hiện tại không hỗ trợ MediaRecorder.");
+      return;
+    }
+
+    const mimeType = getSupportedRecorderMimeType();
 
     try {
       setError(null);
       setResult(null);
       setTranscript("");
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       chunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) chunksRef.current.push(event.data);
       };
-      recorder.onstop = async () => {
-        const stopStream = () => {
-          streamRef.current?.getTracks().forEach((track) => track.stop());
-          streamRef.current = null;
-        };
+
+      mediaRecorder.onerror = (event) => {
+        console.error("[PracticeStudio.mediaRecorder.onerror] Recorder error event", event);
+        setError("Có lỗi khi ghi âm, anh thử lại giúp em.");
+      };
+
+      mediaRecorder.onstop = async () => {
+        const current = recorderRef.current;
         try {
           setBusy(true);
-          const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-          if (!blob || blob.size <= 0) throw new Error("Audio rỗng, anh ghi âm lại giúp em.");
+          const blob = new Blob(chunksRef.current, { type: current?.mimeType || mimeType || "audio/webm" });
+          if (!blob || blob.size <= 0) {
+            console.error("[PracticeStudio.onstop] Empty blob after recording", { mimeType: current?.mimeType || mimeType, chunkCount: chunksRef.current.length });
+            throw new Error("Audio rỗng, anh ghi âm lại giúp em.");
+          }
 
           const formData = new FormData();
-          formData.append("audio", blob, "answer.webm");
+          formData.append("audio", blob, `answer.${(current?.mimeType || mimeType || "audio/webm").includes("mp4") ? "m4a" : "webm"}`);
           formData.append("mode", mode);
           formData.append("promptText", safePromptText);
 
           const transcribeRes = await fetch("/api/transcribe", { method: "POST", body: formData });
           const transcribeData = await safeJson<{ transcript?: string; error?: string }>(transcribeRes);
-          if (!transcribeRes.ok) throw new Error(transcribeData.error || "Không transcript được audio");
+          if (!transcribeRes.ok) {
+            console.error("[PracticeStudio.onstop] /api/transcribe failed", { status: transcribeRes.status, transcribeData, mode, promptText: safePromptText });
+            throw new Error(transcribeData.error || "Không transcript được audio");
+          }
 
           const safeTranscript = String(transcribeData.transcript || "").trim();
-          if (!safeTranscript) throw new Error("Transcript đang rỗng, em chưa gửi xuống backend để chấm.");
+          if (!safeTranscript) {
+            console.error("[PracticeStudio.onstop] Empty transcript after transcribe", { transcribeData, mode, promptText: safePromptText });
+            throw new Error("Transcript đang rỗng, em chưa gửi xuống backend để chấm.");
+          }
           setTranscript(safeTranscript);
 
           const gradeRes = await fetch("/api/grade", {
@@ -155,30 +207,47 @@ export function PracticeStudio({
             body: JSON.stringify({ mode, promptText: safePromptText, transcript: safeTranscript, audioUrl: null }),
           });
           const gradeData = await safeJson<GradeResponse & { error?: string }>(gradeRes);
-          if (!gradeRes.ok) throw new Error(gradeData.error || "Không chấm điểm được");
+          if (!gradeRes.ok) {
+            console.error("[PracticeStudio.onstop] /api/grade failed", { status: gradeRes.status, gradeData, mode, promptText: safePromptText, transcript: safeTranscript });
+            throw new Error(gradeData.error || "Không chấm điểm được");
+          }
           setResult(gradeData);
         } catch (err) {
+          console.error("[PracticeStudio.onstop] Failed to finish speaking flow", {
+            mode,
+            promptText: safePromptText,
+            error: err instanceof Error ? err.message : String(err),
+          });
           setError(err instanceof Error ? err.message : "Có lỗi xảy ra");
         } finally {
-          stopStream();
+          current?.stream.getTracks().forEach((track) => track.stop());
+          recorderRef.current = null;
+          setRecording(false);
           setBusy(false);
         }
       };
-      recorderRef.current = recorder;
-      recorder.start();
+
+      recorderRef.current = { mediaRecorder, stream, mimeType: mimeType || "audio/webm" };
+      mediaRecorder.start();
       setRecording(true);
     } catch (err) {
+      console.error("[PracticeStudio.startRecording] Failed to start recorder", {
+        mode,
+        promptText: safePromptText,
+        mimeType,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      recorderRef.current?.stream.getTracks().forEach((track) => track.stop());
+      recorderRef.current = null;
       setRecording(false);
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
       setError(err instanceof Error ? err.message : "Không truy cập được microphone");
     }
   }
 
   function stopRecording() {
-    if (!recorderRef.current || recorderRef.current.state === "inactive") return;
-    recorderRef.current.stop();
-    setRecording(false);
+    const current = recorderRef.current;
+    if (!current || current.mediaRecorder.state === "inactive") return;
+    current.mediaRecorder.stop();
   }
 
   const activeFeedback = result ?? null;
@@ -231,13 +300,13 @@ export function PracticeStudio({
           </div>
 
           <div className="border-t border-white/70 bg-white/60 p-5">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-3 text-sm text-zinc-500">
                 <button type="button" className="rounded-full border border-zinc-200 bg-white p-2"><ArrowLeft className="size-4" /></button>
-                <span>{promptText}</span>
+                <span className="line-clamp-2">{promptText}</span>
                 <button type="button" className="rounded-full border border-zinc-200 bg-white p-2"><ArrowRight className="size-4" /></button>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <ExportPdfButton
                   promptText={promptText}
                   transcript={transcript}
@@ -251,11 +320,12 @@ export function PracticeStudio({
                   topicVocab={activeFeedback?.topic_vocab}
                 />
                 <Button className="rounded-full bg-violet-600 px-6" onClick={() => (recording ? stopRecording() : void startRecording())} disabled={busy}>
-                  {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Mic className="mr-2 size-4" />}
-                  {recording ? "Dừng ghi âm" : "Ghi âm ngay"}
+                  {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : recording ? <Square className="mr-2 size-4" /> : <Mic className="mr-2 size-4" />}
+                  {recording ? "Dừng ghi âm" : "Bắt đầu ghi âm"}
                 </Button>
               </div>
             </div>
+            <p className="mt-3 text-xs text-zinc-500">Trên mobile: bấm 1 lần để bắt đầu, bấm lần nữa để dừng và gửi đi chấm.</p>
             {error ? <p className="mt-3 text-sm text-red-500">{error}</p> : null}
           </div>
         </Card>
