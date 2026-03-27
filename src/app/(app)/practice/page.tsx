@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Card } from "@/components/ui/card";
+import { AppShell } from "@/components/layout/app-shell";
 import { getAuthSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { getPromptByMode } from "@/lib/prompts";
@@ -11,27 +11,26 @@ export default async function PracticePage({ searchParams }: { searchParams: Pro
 
   const { mode = "PART_1" } = await searchParams;
   const preset = getPromptByMode(mode);
-  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
+  const [user, recent, savedVocabs] = await Promise.all([
+    prisma.user.findUnique({ where: { id: session.user.id } }),
+    prisma.practiceSession.findMany({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    prisma.savedVocabulary.findMany({ where: { userId: session.user.id }, orderBy: { createdAt: "desc" }, take: 100 }),
+  ]);
   if (!user) redirect("/login");
 
-  const recent = await prisma.practiceSession.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    take: 8,
-  });
-
   return (
-    <div className="space-y-6" id="practice-export-root">
-      <Card className="border-none bg-gradient-to-r from-rose-50 to-amber-50 p-6 text-sm leading-7 text-zinc-700">
-        Nhấn <strong>Ghi âm ngay</strong>, hệ thống sẽ gửi audio qua Deepgram để lấy transcript, sau đó Groq chấm theo JSON cứng: overall, fluency, lexical, grammar, pronunciation, transcript corrections, sample answer và topic vocab.
-      </Card>
-
+    <AppShell active="/practice" credits={user.credits} isPro={user.isPro}>
       <PracticeStudio
         mode={preset.mode}
         promptText={preset.promptText}
         title={preset.title}
         credits={user.credits}
         isPro={user.isPro}
+        savedWords={savedVocabs.map((item) => item.phrase)}
         recentSessions={recent.map((item) => ({
           id: item.id,
           promptText: item.promptText,
@@ -45,6 +44,6 @@ export default async function PracticePage({ searchParams }: { searchParams: Pro
           createdAt: item.createdAt.toISOString(),
         }))}
       />
-    </div>
+    </AppShell>
   );
 }

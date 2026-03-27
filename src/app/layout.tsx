@@ -29,6 +29,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                     <>
                       <Link href="/dashboard">Dashboard</Link>
                       <Link href="/practice">Luyện tập</Link>
+                      <Link href="/history">Lịch sử</Link>
+                      <Link href="/review">Ôn tập</Link>
                       <Link href="/billing">Mua Xịn</Link>
                       <SignOutButton />
                     </>

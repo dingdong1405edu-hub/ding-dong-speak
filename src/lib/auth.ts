@@ -24,7 +24,7 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
-        token.credits = user.credits ?? 3;
+        token.credits = user.credits ?? 30;
         token.isPro = user.isPro ?? false;
         token.streak = user.streak ?? 0;
       }
@@ -46,7 +46,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id;
-        session.user.credits = token.credits ?? 3;
+        session.user.credits = token.credits ?? 30;
         session.user.isPro = token.isPro ?? false;
         session.user.streak = token.streak ?? 0;
       }

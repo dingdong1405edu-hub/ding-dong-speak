@@ -2,13 +2,17 @@ import { NextResponse } from "next/server";
 import { getPayOS } from "@/lib/payos";
 import { prisma } from "@/lib/prisma";
 
+export async function GET() {
+  return NextResponse.json({ success: true, message: "PayOS webhook is alive" }, { status: 200 });
+}
+
 export async function POST(request: Request) {
   let body: unknown = null;
 
   try {
     body = await request.json();
     const payos = getPayOS();
-    const webhookData = await payos.webhooks.verify(body as any);
+    const webhookData = await payos.webhooks.verify(body as Parameters<typeof payos.webhooks.verify>[0]);
     const orderCode = String(webhookData.orderCode || "");
     const code = String((webhookData as { code?: string | number }).code || "");
     const desc = String((webhookData as { desc?: string }).desc || "");
