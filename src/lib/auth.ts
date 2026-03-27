@@ -3,6 +3,10 @@ import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 
+function isActivePremium(premiumUntil: Date | null | undefined) {
+  return Boolean(premiumUntil && premiumUntil.getTime() > Date.now());
+}
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: {
@@ -32,9 +36,13 @@ export const authOptions: NextAuthOptions = {
       if ((trigger === "update" || token.credits === undefined || token.isPro === undefined || token.streak === undefined) && token.email) {
         const freshUser = await prisma.user.findUnique({ where: { email: token.email } });
         if (freshUser) {
+          const activePro = isActivePremium(freshUser.premiumUntil);
+          if (freshUser.isPro !== activePro) {
+            await prisma.user.update({ where: { id: freshUser.id }, data: { isPro: activePro } });
+          }
           token.id = freshUser.id;
           token.credits = freshUser.credits;
-          token.isPro = freshUser.isPro;
+          token.isPro = activePro;
           token.streak = freshUser.streak;
           token.picture = freshUser.image ?? token.picture;
           token.name = freshUser.name ?? token.name;

@@ -27,6 +27,7 @@ model User {
   emailVerified  DateTime?
   image          String?
   isPro          Boolean           @default(false)
+  premiumUntil   DateTime?
   credits        Int               @default(30)
   streak         Int               @default(0)
   lastActiveDate DateTime?
@@ -99,6 +100,36 @@ model PracticeSession {
   @@index([mode, createdAt])
 }
 
+model QuestionTopic {
+  id        String         @id @default(uuid()) @db.Uuid
+  part      PracticeMode
+  name      String
+  slug      String         @unique
+  desc      String?
+  sortOrder Int            @default(0)
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  questions QuestionItem[]
+
+  @@index([part, sortOrder])
+}
+
+model QuestionItem {
+  id        String        @id @default(uuid()) @db.Uuid
+  topicId    String       @db.Uuid
+  part      PracticeMode
+  promptText String       @db.Text
+  sortOrder Int           @default(0)
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  topic     QuestionTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId, sortOrder])
+  @@index([part, createdAt])
+}
+
 model SavedVocabulary {
   id        String       @id @default(uuid()) @db.Uuid
   userId    String       @db.Uuid
@@ -113,15 +144,16 @@ model SavedVocabulary {
 }
 
 model Transaction {
-  id        String            @id @default(uuid()) @db.Uuid
-  userId    String            @db.Uuid
-  amount    Int
-  packageId String
-  status    TransactionStatus @default(PENDING)
-  orderCode String            @unique
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String            @id @default(uuid()) @db.Uuid
+  userId        String            @db.Uuid
+  amount        Int
+  packageId     String
+  durationMonths Int               @default(1)
+  status        TransactionStatus @default(PENDING)
+  orderCode     String            @unique
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
 }

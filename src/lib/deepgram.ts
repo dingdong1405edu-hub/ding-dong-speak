@@ -30,3 +30,22 @@ export async function speechToText(audioBuffer: ArrayBuffer, mimeType = "audio/w
     throw error;
   }
 }
+
+export async function textToSpeech(text: string, voice = "aura-athena-en") {
+  const response = await fetch(`https://api.deepgram.com/v1/speak?model=${voice}&encoding=mp3`, {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    console.error("[deepgram.textToSpeech] TTS failed", { status: response.status, voice, errorText });
+    throw new Error(`Deepgram TTS failed: ${response.status}`);
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}

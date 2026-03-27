@@ -4,10 +4,11 @@ import { getPayOS } from "@/lib/payos";
 import { prisma } from "@/lib/prisma";
 import { getAuthSession } from "@/lib/session";
 
-const PACKAGES: Record<string, { amount: number; title: string }> = {
-  "pro-100k": { amount: 100000, title: "Ding Dong Speak Pro 100k" },
-  "pro-180k": { amount: 180000, title: "Ding Dong Speak Pro 180k" },
-  "pro-250k": { amount: 250000, title: "Ding Dong Speak Pro 250k" },
+const PACKAGES: Record<string, { amount: number; title: string; months: number }> = {
+  "premium-1m": { amount: 100000, title: "Premium 1 month", months: 1 },
+  "premium-2m": { amount: 180000, title: "Premium 2 months", months: 2 },
+  "premium-3m": { amount: 250000, title: "Premium 3 months", months: 3 },
+  "premium-5m": { amount: 400000, title: "Premium 5 months", months: 5 },
 };
 
 export async function POST(request: Request) {
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const packageId = String(body.packageId || "pro-100k");
+    const packageId = String(body.packageId || "premium-1m");
     const selected = PACKAGES[packageId];
     if (!selected) {
       console.error("[api/payment/create-link] Invalid packageId", { packageId, body, userId: session.user.id });
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
         userId: session.user.id,
         amount: selected.amount,
         packageId,
+        durationMonths: selected.months,
         orderCode,
         status: "PENDING",
       },
@@ -43,16 +45,10 @@ export async function POST(request: Request) {
       returnUrl: `${process.env.NEXTAUTH_URL}/billing?status=paid`,
       buyerName: session.user.name ?? "Ding Dong User",
       buyerEmail: session.user.email ?? undefined,
-      items: [
-        {
-          name: selected.title,
-          quantity: 1,
-          price: selected.amount,
-        },
-      ],
+      items: [{ name: selected.title, quantity: 1, price: selected.amount }],
     });
 
-    return NextResponse.json({ checkoutUrl: paymentLink.checkoutUrl, qrCode: paymentLink.qrCode });
+    return NextResponse.json({ checkoutUrl: paymentLink.checkoutUrl, qrCode: paymentLink.qrCode, package: selected });
   } catch (error) {
     console.error("[api/payment/create-link] Failed to create payment link", {
       userId: session.user.id,

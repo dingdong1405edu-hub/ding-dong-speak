@@ -2,13 +2,18 @@ import { NextResponse } from "next/server";
 import { getPayOS } from "@/lib/payos";
 import { prisma } from "@/lib/prisma";
 
+function addMonths(base: Date, months: number) {
+  const next = new Date(base);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
 export async function GET() {
   return NextResponse.json({ success: true, message: "PayOS webhook is alive" }, { status: 200 });
 }
 
 export async function POST(request: Request) {
   let body: unknown = null;
-
   try {
     body = await request.json();
     const payos = getPayOS();
@@ -17,39 +22,26 @@ export async function POST(request: Request) {
     const code = String((webhookData as { code?: string | number }).code || "");
     const desc = String((webhookData as { desc?: string }).desc || "");
 
-    if (!orderCode) {
-      console.error("[api/payment/webhook] Missing orderCode after verify", { webhookData, body });
-      return NextResponse.json({ success: true, ignored: true, reason: "missing_order_code" }, { status: 200 });
-    }
+    if (!orderCode) return NextResponse.json({ success: true, ignored: true, reason: "missing_order_code" }, { status: 200 });
 
-    const transaction = await prisma.transaction.findUnique({ where: { orderCode } });
-    if (!transaction) {
-      console.error("[api/payment/webhook] Transaction not found", { orderCode, code, desc, webhookData, body });
-      return NextResponse.json({ success: true, ignored: true, reason: "transaction_not_found" }, { status: 200 });
-    }
+    const transaction = await prisma.transaction.findUnique({ where: { orderCode }, include: { user: true } });
+    if (!transaction) return NextResponse.json({ success: true, ignored: true, reason: "transaction_not_found" }, { status: 200 });
 
     const paid = code === "00" || desc.toUpperCase().includes("SUCCESS") || desc.toUpperCase().includes("THANH CONG");
+    if (!paid) return NextResponse.json({ success: true, ignored: true, reason: "non_success_event" }, { status: 200 });
 
-    if (!paid) {
-      console.error("[api/payment/webhook] Non-success payment event", { orderCode, code, desc, webhookData, body });
-      return NextResponse.json({ success: true, ignored: true, reason: "non_success_event" }, { status: 200 });
-    }
+    const base = transaction.user.premiumUntil && transaction.user.premiumUntil > new Date() ? transaction.user.premiumUntil : new Date();
+    const premiumUntil = addMonths(base, transaction.durationMonths || 1);
 
     await prisma.$transaction([
-      prisma.transaction.update({
-        where: { id: transaction.id },
-        data: { status: "PAID" },
-      }),
+      prisma.transaction.update({ where: { id: transaction.id }, data: { status: "PAID" } }),
       prisma.user.update({
         where: { id: transaction.userId },
-        data: {
-          isPro: true,
-          credits: 9999,
-        },
+        data: { isPro: true, credits: 9999, premiumUntil },
       }),
     ]);
 
-    return NextResponse.json({ success: true, userId: transaction.userId, orderCode }, { status: 200 });
+    return NextResponse.json({ success: true, userId: transaction.userId, orderCode, premiumUntil }, { status: 200 });
   } catch (error) {
     console.error("[api/payment/webhook] Webhook handling failed", {
       body,

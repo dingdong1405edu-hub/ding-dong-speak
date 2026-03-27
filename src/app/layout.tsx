@@ -28,7 +28,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                   {session?.user ? (
                     <>
                       <Link href="/dashboard">Dashboard</Link>
-                      <Link href="/practice">Luyện tập</Link>
+                      <Link href="/practice">Luyện theo câu</Link>
+                      <Link href="/mock-test">Thi thử</Link>
                       <Link href="/history">Lịch sử</Link>
                       <Link href="/review">Ôn tập</Link>
                       <Link href="/billing">Mua Xịn</Link>

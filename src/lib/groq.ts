@@ -18,7 +18,12 @@ const gradeSchema = z.object({
   notes: z.array(z.string()).optional(),
 });
 
-const SYSTEM_PROMPT = `You are an IELTS Speaking examiner.
+const questionSchema = z.object({
+  topic: z.string(),
+  questions: z.array(z.string()).min(3).max(8),
+});
+
+const SYSTEM_PROMPT = `You are a very strict IELTS Speaking examiner.
 Return ONLY pure JSON. Do not wrap in markdown. Do not use code fences. Do not add explanations before or after the JSON.
 Return this exact shape:
 {
@@ -36,6 +41,8 @@ Return this exact shape:
 }
 Rules:
 - Scores are IELTS-style whole numbers from 0 to 9.
+- Be strict. Do not over-score weak answers.
+- If the response is short, repetitive, vague, unnatural, or contains grammar problems, reduce the score noticeably.
 - transcript_corrections must preserve original order of spoken words/phrases when possible.
 - Mark wrong words with status=incorrect and provide corrected_word.
 - Mark better alternatives with status=improved.
@@ -43,28 +50,22 @@ Rules:
 - topic_vocab should be useful IELTS vocabulary items, short phrases only.
 - notes should contain short bullet-like feedback strings.`;
 
-export type GradeResult = z.infer<typeof gradeSchema>;
-
 function extractJsonObject(content: string) {
   const trimmed = content.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (fenced?.[1]) return fenced[1].trim();
-
   const firstBrace = trimmed.indexOf("{");
   const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    return trimmed.slice(firstBrace, lastBrace + 1);
-  }
-
+  if (firstBrace >= 0 && lastBrace > firstBrace) return trimmed.slice(firstBrace, lastBrace + 1);
   return trimmed;
 }
 
-function safeParseGrade(content: string) {
+function parseWithSchema<T>(content: string, schema: z.ZodSchema<T>, label: string) {
   const candidate = extractJsonObject(content);
   try {
-    return gradeSchema.parse(JSON.parse(candidate));
+    return schema.parse(JSON.parse(candidate));
   } catch (error) {
-    console.error("[groq.safeParseGrade] Failed to parse/validate model JSON", {
+    console.error(`[groq.${label}] Failed to parse/validate model JSON`, {
       rawContent: content,
       candidate,
       error: error instanceof Error ? error.message : String(error),
@@ -73,7 +74,7 @@ function safeParseGrade(content: string) {
   }
 }
 
-async function requestGroq(input: { mode: string; promptText: string; transcript: string }) {
+async function requestGroq(messages: Array<{ role: "system" | "user"; content: string }>) {
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -84,53 +85,58 @@ async function requestGroq(input: { mode: string; promptText: string; transcript
       model: "llama-3.3-70b-versatile",
       temperature: 0.2,
       response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: `Mode: ${input.mode}\nPrompt: ${input.promptText}\nStudent transcript: ${input.transcript}`,
-        },
-      ],
+      messages,
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    console.error("[groq.requestGroq] Groq request failed", {
-      status: response.status,
-      body: errorText,
-      input,
-    });
+    console.error("[groq.requestGroq] Groq request failed", { status: response.status, body: errorText, messages });
     throw new Error(`Groq request failed: ${response.status}`);
   }
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
-
   if (!content) {
-    console.error("[groq.requestGroq] Groq returned empty content", { data, input });
+    console.error("[groq.requestGroq] Groq returned empty content", { data, messages });
     throw new Error("Groq returned empty content");
   }
-
   return content as string;
 }
 
+export type GradeResult = z.infer<typeof gradeSchema>;
+export type GeneratedQuestions = z.infer<typeof questionSchema>;
+
 export async function gradeSpeaking(input: { mode: string; promptText: string; transcript: string }) {
   let lastError: unknown;
-
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const content = await requestGroq(input);
-      return safeParseGrade(content);
+      const content = await requestGroq([
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: `Mode: ${input.mode}\nPrompt: ${input.promptText}\nStudent transcript: ${input.transcript}` },
+      ]);
+      return parseWithSchema(content, gradeSchema, "gradeSpeaking");
     } catch (error) {
       lastError = error;
-      console.error("[groq.gradeSpeaking] Attempt failed", {
-        attempt,
-        input,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      console.error("[groq.gradeSpeaking] Attempt failed", { attempt, input, error: error instanceof Error ? error.message : String(error) });
     }
   }
-
   throw lastError instanceof Error ? lastError : new Error("Không parse được dữ liệu chấm điểm từ LLM");
+}
+
+export async function gradeMockExam(input: { part: string; questions: string[]; answers: string[] }) {
+  const transcript = input.answers.join(" ").trim();
+  const promptText = input.questions.map((question, index) => `${index + 1}. ${question}`).join("\n");
+  return gradeSpeaking({ mode: input.part, promptText: `Mock exam questions:\n${promptText}`, transcript });
+}
+
+export async function generateTopicQuestions(input: { part: string; topic: string }) {
+  const content = await requestGroq([
+    {
+      role: "system",
+      content: `You are an IELTS speaking material writer. Return ONLY pure JSON with shape {"topic":"...","questions":["..."]}. Generate 5 strict IELTS-style questions suitable for the requested part. No markdown.` ,
+    },
+    { role: "user", content: `Part: ${input.part}\nRequested topic: ${input.topic}` },
+  ]);
+  return parseWithSchema(content, questionSchema, "generateTopicQuestions");
 }

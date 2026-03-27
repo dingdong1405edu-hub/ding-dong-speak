@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { BookOpen, Crown, History, Home, Mic2, NotebookPen } from "lucide-react";
+import { BookOpen, Crown, History, Home, Mic2, NotebookPen, ScrollText } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 const items = [
   { href: "/dashboard", label: "Trang chủ", icon: Home },
   { href: "/practice", label: "Luyện theo câu", icon: Mic2 },
+  { href: "/mock-test", label: "Thi thử", icon: ScrollText },
   { href: "/history", label: "Lịch sử", icon: History },
   { href: "/review", label: "Ôn tập", icon: NotebookPen },
   { href: "/billing", label: "Mua Xịn", icon: Crown },
